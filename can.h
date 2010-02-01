@@ -26,6 +26,17 @@
 #ifndef _CAN_H
 #define _CAN_H
 
+typedef enum baud_setting_t
+{
+	baud_1000,
+	baud_500,
+	baud_250,
+	baud_200,
+	baud_125,
+	baud_100
+}
+baud_setting_t;
+
 typedef enum mob_mode_t
 {
 	disabled,	/* inactive */
@@ -87,12 +98,15 @@ mob_config_t;
 //
 
 //
-//	Initialize the CAN controller to a known state. Setup the bit-timings
-//	as noted above.
+//	Initialize the CAN controller to a known state. The possible baud
+//	rates are described by the baud_setting_t enum above.
 //
 
 void
-can_init (void);
+can_init
+(
+	const baud_setting_t baud_rate
+);
 
 //
 //	Set a callback function for the bus off failure event. If this ever
