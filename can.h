@@ -11,6 +11,17 @@
 
 #include <inttypes.h>
 
+typedef enum baud_setting_t
+{
+	can_baud_1000,
+	can_baud_500,
+	can_baud_250,
+	can_baud_200,
+	can_baud_125,
+	can_baud_100
+}
+baud_setting_t;
+
 typedef enum id_type_t
 {
 	standard,	/* 2.0A 11-bit identifier */
@@ -56,7 +67,10 @@ mob_config_t;
 //
 
 void
-can_init (void);
+can_init
+(
+	const baud_setting_t baud_rate
+);
 
 //
 //	Set a callback function for the bus off failure event. If this ever

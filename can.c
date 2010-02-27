@@ -13,6 +13,15 @@
 
 static 			void			(*bus_off_callback_ptr) (void);
 static 			mob_config_t 	mob_configs[15];
+static const uint8_t baud_rate_settings[6][3] =
+{
+	{0x02, 0x04, 0x13},    /* 1000Kbps  */
+	{0x02, 0x0c, 0x37},    /* 500Kbps  */
+	{0x06, 0x0c, 0x37},    /* 250Kbps  */
+	{0x08, 0x0c, 0x37},    /* 200Kbps  */
+	{0x0e, 0x0c, 0x37},    /* 125Kbps  */
+	{0x12, 0x0c, 0x37}    /* 100Kbps  */
+};
 
 ISR (CANIT_vect)
 {
@@ -74,7 +83,10 @@ ISR (CANIT_vect)
 //
 
 void
-can_init (void)
+can_init
+(
+	const baud_setting_t baud_rate
+)
 {
 	int i;
 
@@ -107,6 +119,10 @@ can_init (void)
 	CANBT1 = 0x12;
 	CANBT2 = 0x0C;
 	CANBT3 = 0x37;
+
+	CANBT1 = baud_rate_settings[baud_rate][0];
+	CANBT2 = baud_rate_settings[baud_rate][1];
+	CANBT3 = baud_rate_settings[baud_rate][3];
 
 	CANGCON = 0x02;
 }
