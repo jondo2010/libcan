@@ -6,45 +6,10 @@
 //	Michael Jean <michael.jean@shaw.ca>
 //
 
-//
-//	This particular configuration utilizes the following bit timings, assuming
-//	a 16 MHz system clock:
-//
-//	Parameter				Value
-//	======================	============
-//
-//	Time Quantum Length		0.625 us
-//	Bit Time				16 TQ
-//	Propagation Segment 	7 TQ
-//	Phase Segment #1		4 TQ
-//	Phase Segment #2		4 TQ
-//	Synchro Jump Width		1 TQ
-//
-//	Effective Baud Rate		100 Kbps
-//
-
 #ifndef _CAN_H
 #define _CAN_H
 
-typedef enum baud_setting_t
-{
-	baud_1000,
-	baud_500,
-	baud_250,
-	baud_200,
-	baud_125,
-	baud_100
-}
-baud_setting_t;
-
-typedef enum mob_mode_t
-{
-	disabled,	/* inactive */
-	receive,	/* listen for packets matching mask+id */
-	transmit,	/* packets will be broadcast */
-	reply		/* automatically reply to a remote request matching mask+id */
-}
-mob_mode_t;
+#include <inttypes.h>
 
 typedef enum id_type_t
 {
@@ -60,27 +25,15 @@ typedef enum packet_type_t
 }
 packet_type_t;
 
-typedef enum can_err_t
-{
-	bit_err,	/* bit monitored different from sent outside arbitration block */
-	stuff_err,	/* five more bits with the same polarity */
-	crc_err,	/* data does not pass crc check */
-	form_err,	/* violation of crc, ack, or eof fields */
-	ack_err		/* no dominant bit in ack field, e.g., nobody's home */
-}
-can_err_t;
-
 typedef struct mob_config_t
 {
 	uint32_t		id;		/* 1 */
 	uint32_t		mask;	/* 1 */
 
-	mob_mode_t		mode;
 	id_type_t		id_type;
 
 	void			(*tx_callback_ptr)	(uint8_t mob_index);
 	void			(*rx_callback_ptr)	(uint8_t mob_index, uint32_t id, packet_type_t type);
-	void			(*err_callback_ptr)	(uint8_t mob_index, can_err_t err_type);
 }
 mob_config_t;
 
@@ -98,15 +51,12 @@ mob_config_t;
 //
 
 //
-//	Initialize the CAN controller to a known state. The possible baud
-//	rates are described by the baud_setting_t enum above.
+//	Initialize the CAN controller to a known state. The controller
+//	defaults to 1 Mbit/s operation.
 //
 
 void
-can_init
-(
-	const baud_setting_t baud_rate
-);
+can_init (void);
 
 //
 //	Set a callback function for the bus off failure event. If this ever
@@ -171,6 +121,17 @@ can_read_data
 
 void
 can_ready_to_send
+(
+	uint8_t mob_index		/* message object */
+);
+
+//
+//	Flag a particular message object indexed at `mob_index' as ready
+//	to receive data.
+//
+
+void
+can_ready_to_receive
 (
 	uint8_t mob_index		/* message object */
 );

@@ -4,89 +4,65 @@
 //	Michael Jean <michael.jean@shaw.ca>
 //
 
+#include <stdio.h>
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 
 #include "can.h"
 
-static void				(*bus_off_callback_ptr) (void);
-static mob_config_t 	mob_configs[15];
-static const uint8_t baud_rate_settings[6][3] =
-{
-		{0x02, 0x04, 0x13},		/* 1000Kbps	*/
-		{0x02, 0x0c, 0x37},		/* 500Kbps	*/
-		{0x06, 0x0c, 0x37},		/* 250Kbps	*/
-		{0x08, 0x0c, 0x37},		/* 200Kbps	*/
-		{0x0e, 0x0c, 0x37},		/* 125Kbps	*/
-		{0x12, 0x0c, 0x37}		/* 100Kbps	*/
-};
+static 			void			(*bus_off_callback_ptr) (void);
+static 			mob_config_t 	mob_configs[15];
 
 ISR (CANIT_vect)
 {
-	uint8_t 		old_page, int_page;
-	uint8_t			mob_index;
+	uint8_t			old_page;
+	uint8_t 		mob_index = 0;
 
 	uint32_t		id = 0;
+	packet_type_t	packet_type;
 
-	uint8_t			status;
+	int				bus_off_int;
 
-	packet_type_t	packet_type = 0;
-	can_err_t		err_type = 0;
+	bus_off_int = (CANHPMOB & 0xF0) == 0xF0;
 
-	mob_config_t	mob_config;
-
-	old_page = CANPAGE;		/* 1 */
-	int_page = CANHPMOB;
-
-	if (int_page == 0xF0)	/* 2 */
+	if (bus_off_int)
 	{
-		if ((CANGIT & 0x40) && bus_off_callback_ptr)
-			bus_off_callback_ptr ();
+		CANGIT = 0x40;	/* 1 */
 
-		CANGIT = 0x40;		/* 3 */
+		if (bus_off_callback_ptr)
+			bus_off_callback_ptr ();
 	}
 	else
 	{
-		status = CANSTMOB;	/* 4 */
+		old_page = CANPAGE;
+		mob_index = CANHPMOB >> 4;
 
-		mob_index = int_page >> 4;
-		mob_config = mob_configs[mob_index];
+		CANPAGE = CANHPMOB;
 
-		if (status & 0x40)
+		if (CANSTMOB & 0x20) 		/* receive */
 		{
-			if (mob_config.tx_callback_ptr)
-				 mob_config.tx_callback_ptr (mob_index);
+			CANSTMOB = 0x00;
 
-			can_config_mob (mob_index, &mob_config); /* 5 */
-		}
-		else if (status & 0x20)
-		{
-			if (mob_config.rx_callback_ptr)
+			if (mob_configs[mob_index].rx_callback_ptr)
 			{
-				id = (mob_config.id_type == standard) ?
+				id = (mob_configs[mob_index].id_type == standard) ?
 					((uint32_t)CANIDT2 >> 5) | ((uint32_t)CANIDT1 << 3) :
 					((uint32_t)CANIDT4 >> 3)  | ((uint32_t)CANIDT3 << 5) |
 					((uint32_t)CANIDT2 << 13) | ((uint32_t)CANIDT1 << 21);
 
 				packet_type = (CANIDT4 & 0x40) ? remote : payload;
 
-				mob_config.rx_callback_ptr (mob_index, id, packet_type);
+				mob_configs[mob_index].rx_callback_ptr
+					(mob_index, id, packet_type);
 			}
-
-			can_config_mob (mob_index, &mob_config); /* 5 */
 		}
-		else if ((status & 0x1F))
+		else if (CANSTMOB & 0x40) 	/* transmit */
 		{
-			if 		(status & 0x10)		err_type = bit_err;
-			else if	(status & 0x08)		err_type = stuff_err;
-			else if	(status & 0x04)		err_type = crc_err;
-			else if	(status & 0x02)		err_type = form_err;
-			else if	(status & 0x01)		err_type = ack_err;
+			CANSTMOB = 0x00;
 
-			if (mob_config.err_callback_ptr)
-				mob_config.err_callback_ptr (mob_index, err_type);
-
-			CANSTMOB = CANSTMOB & ~0x1F; /* 6 */
+			if (mob_configs[mob_index].tx_callback_ptr)
+				mob_configs[mob_index].tx_callback_ptr (mob_index);
 		}
 
 		CANPAGE = old_page;
@@ -94,36 +70,11 @@ ISR (CANIT_vect)
 }
 
 //
-//	1.	It's possible we are interrupting while using the CANPAGE register,
-//		e.g., configuring a message object or reading data. We will set
-//		the CANPAGE register back when we finish the ISR.
-//
-//	2. 	CANPHMOB == 0xF0 when a general (non-message object) interrupt occurs.
-//
-//	3.	General interrupts are cleared by writing 1 to the particular interrupt
-//		bit. Message object interrupts require a read-modify-write to clear the
-//		particular interrupt.
-//
-//	4.	It's possible that the status register might change while we are in
-//		the ISR, e.g., if we are handling a bit error and the retry goes
-//		through and sets the transmission ok flag. So, we have to be careful
-//		with the status register.
-//
-//	5.	We have to `re-arm' the interrupt by re-configuring the message
-//		object. It seems like a waste of time but it's the only reliable
-//		way to make the controller work.
-//
-//	6.	Unlike in (5), we don't `re-arm' the interrupt because that would
-//		ruin any chance of automatically retrying. The controller will
-//		keep trying until the message goes through or the other devices on
-//		the bus tell it to shut up.
+//	1.	Writing `1' to a bit in the CANGIT register resets the interrupt.
 //
 
 void
-can_init
-(
-	const baud_setting_t baud_rate
-)
+can_init (void)
 {
 	int i;
 
@@ -147,21 +98,15 @@ can_init
 		CANIDM4 = 0x00;
 	}
 
-	CANGIE = 0xF8;	/* 2 */
+	CANGIT = 0x7F;
+	CANGIE = 0xB8;	/* 2 */
+
 	CANIE1 = 0x7F;
 	CANIE2 = 0xFF;
 
-	//CANBT1 = baud_rate_settings[baud_rate][0];	/* 3 */
-	//CANBT2 = baud_rate_settings[baud_rate][1];
-	//CANBT3 = baud_rate_settings[baud_rate][3];
-
-	//CANBT1 = 0x12;
-	//CANBT2 = 0x0C;
-	//CANBT3 = 0x37;
-
-	CANBT1 = 0x02;
-	CANBT2 = 0x04;
-	CANBT3 = 0x13;
+	CANBT1 = 0x12;
+	CANBT2 = 0x0C;
+	CANBT3 = 0x37;
 
 	CANGCON = 0x02;
 }
@@ -174,9 +119,6 @@ can_init
 //	2.	We listen for bus-off, reception ok, transmission ok.  We ignore
 //		single-packet errors.
 //
-//	3.	Use the precalculated bit timings from the datasheet for the given
-//		baud rate.
-//
 
 void
 can_set_bus_off_callback (void (*callback_ptr)(void))
@@ -187,9 +129,15 @@ can_set_bus_off_callback (void (*callback_ptr)(void))
 void
 can_config_mob (uint8_t mob_index, mob_config_t *config_desc)
 {
+	uint8_t old_page;
+
+	old_page = CANPAGE;
+
 	mob_configs[mob_index] = *config_desc;
 
 	CANPAGE = (mob_index << 4);
+	CANSTMOB = 0x00;
+	CANCDMOB = 0x00;
 
 	switch (config_desc->id_type)
 	{
@@ -222,22 +170,7 @@ can_config_mob (uint8_t mob_index, mob_config_t *config_desc)
 			break;
 	}
 
-	CANSTMOB = 0x00;
-
-	switch (config_desc->mode)
-	{
-		case receive: 	/* 2 */
-
-			CANCDMOB = (config_desc->id_type == extended) ? 0x90 : 0x80;
-			break;
-
-		case disabled:
-		case transmit: 	/* 3 */
-		case reply:		/* 4 */
-
-			CANCDMOB = 0x00;
-			break;
-	}
+	old_page = CANPAGE;
 }
 
 //
@@ -258,7 +191,11 @@ can_config_mob (uint8_t mob_index, mob_config_t *config_desc)
 uint8_t
 can_load_data (uint8_t mob_index, uint8_t *data, uint8_t n)
 {
-	int i;
+	int 		i;
+
+	uint8_t 	old_page;
+
+	old_page = CANPAGE;
 
 	CANPAGE = (mob_index << 4);
 
@@ -267,6 +204,8 @@ can_load_data (uint8_t mob_index, uint8_t *data, uint8_t n)
 		CANMSG = data[i];
 
 	CANCDMOB = n;
+	CANPAGE = old_page;
+
 	return n;
 }
 
@@ -278,7 +217,11 @@ uint8_t
 can_read_data (uint8_t mob_index, uint8_t *data, uint8_t n)
 {
 	int 		i;
+
 	uint8_t 	dlc;
+	uint8_t		old_page;
+
+	old_page = CANPAGE;
 
 	CANPAGE = (mob_index << 4);
 
@@ -288,33 +231,68 @@ can_read_data (uint8_t mob_index, uint8_t *data, uint8_t n)
 	for (i = 0; i < n; i++)
 		data[i] = CANMSG;
 
+	CANPAGE = old_page;
+
 	return n;
 }
 
 void
 can_ready_to_send (uint8_t mob_index)
 {
-	uint8_t dlc;
+	uint8_t old_page;
 
-	dlc = CANCDMOB & 0x0F;
+	old_page = CANPAGE;
 
 	CANPAGE = (mob_index << 4);
-	CANCDMOB = (mob_configs[mob_index].id_type == extended) ? 0x50 | dlc : 0x40 | dlc;
+	CANIDT4 &= ~0x04;	/* 1 */
+	CANCDMOB &= ~0xF0;	/* 2 */
+	CANCDMOB |= (mob_configs[mob_index].id_type == extended) ? 0x50 : 0x40;
+	CANPAGE = old_page;
+}
+
+//
+//	1.	The RTR bit could have been set by a previous remote request, so we must
+//		explicitly clear it.
+//
+//	2.	This preserves the DLC portion of the control register, which was previously
+//		set by a load data operation.
+//
+
+void
+can_ready_to_receive (uint8_t mob_index)
+{
+	uint8_t old_page;
+
+	old_page = CANPAGE;
+
+	CANPAGE = (mob_index << 4);
+	CANCDMOB = (mob_configs[mob_index].id_type == extended) ? 0x90 : 0x80;
+	CANPAGE = old_page;
 }
 
 void
 can_remote_request (uint8_t mob_index, uint8_t n)
 {
+	uint8_t old_page;
+
+	old_page = CANPAGE;
+
 	CANPAGE = (mob_index << 4);
 	CANIDT4 |= 0x04;
 	CANCDMOB = (mob_configs[mob_index].id_type == extended) ? 0x50 | n : 0x40 | n;
+	CANPAGE = old_page;
 }
 
 void
 can_reply_valid (uint8_t mob_index)
 {
+	uint8_t old_page;
+
+	old_page = CANPAGE;
+
 	CANPAGE = (mob_index << 4);
 	CANCDMOB = (mob_configs[mob_index].id_type == extended) ? 0xB0 : 0xA0; /* 1 */
+	CANPAGE = old_page;
 }
 
 //
