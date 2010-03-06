@@ -11,8 +11,9 @@
 
 #include "can.h"
 
-static 			void			(*bus_off_callback_ptr) (void);
-static 			mob_config_t 	mob_configs[15];
+static void				(*bus_off_callback_ptr) (void);
+static mob_config_t 	mob_configs[15];
+
 static const uint8_t baud_rate_settings[6][3] =
 {
 	{0x02, 0x04, 0x13},    /* 1000Kbps  */
@@ -20,7 +21,7 @@ static const uint8_t baud_rate_settings[6][3] =
 	{0x06, 0x0c, 0x37},    /* 250Kbps  */
 	{0x08, 0x0c, 0x37},    /* 200Kbps  */
 	{0x0e, 0x0c, 0x37},    /* 125Kbps  */
-	{0x12, 0x0c, 0x37}    /* 100Kbps  */
+	{0x12, 0x0c, 0x37}     /* 100Kbps  */
 };
 
 ISR (CANIT_vect)
