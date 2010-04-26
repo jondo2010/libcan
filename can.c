@@ -117,10 +117,6 @@ can_init
 	CANIE1 = 0x7F;
 	CANIE2 = 0xFF;
 
-	CANBT1 = 0x12;
-	CANBT2 = 0x0C;
-	CANBT3 = 0x37;
-
 	CANBT1 = baud_rate_settings[baud_rate][0];
 	CANBT2 = baud_rate_settings[baud_rate][1];
 	CANBT3 = baud_rate_settings[baud_rate][3];
